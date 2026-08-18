@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Gateway.AppHost/Gateway.AppHost.csproj" />
+    <Project Path="src/Gateway.Application/Gateway.Application.csproj" />
+    <Project Path="src/Gateway.Domain/Gateway.Domain.csproj" />
+    <Project Path="src/Gateway.Infrastructure/Gateway.Infrastructure.csproj" />
+    <Project Path="src/Gateway.Presentation/Gateway.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/test/" />
+</Solution>
