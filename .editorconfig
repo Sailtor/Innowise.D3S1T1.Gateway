@@ -1,0 +1,52 @@
+root = true
+
+[*.cs]
+
+# Using directives sorting order
+dotnet_sort_system_directives_first = true
+
+# SA0001 XML comment analysis disabled
+dotnet_diagnostic.SA0001.severity = none
+
+# SA1200: Using directives should be placed correctly
+dotnet_diagnostic.SA1200.severity = none
+
+# SA1633: File must have a header
+dotnet_diagnostic.SA1633.severity = none
+
+# SA1600: Elements must be documented
+dotnet_diagnostic.SA1600.severity = none
+
+# SA1101: Prefix local calls with 'this.'
+dotnet_diagnostic.SA1101.severity = none
+
+# SA1009: A closing parenthesis within a C# statement is not spaced correctly
+dotnet_diagnostic.SA1009.severity = none
+
+# SA1009: The closing parenthesis or bracket in a call to a C# method or indexer, or the declaration of a method or indexer, is not placed on the same line as the last parameter.
+dotnet_diagnostic.SA1111.severity = none
+
+# --- HANDLE .NET ANALYZERS (CAxxxx) ---
+
+# CA1812: Internal class that is apparently never instantiated.
+dotnet_diagnostic.CA1812.severity = suggestion
+
+# CA1848
+dotnet_diagnostic.CA1848.severity = suggestion
+
+# CA1062
+dotnet_diagnostic.CA1062.severity = suggestion
+
+# CA1031 Catch more specific allowed excaption type
+dotnet_diagnostic.CA1031.severity = suggestion
+
+# CA2007 Catch more specific allowed excaption type
+dotnet_diagnostic.CA2007.severity = suggestion
+
+# --- Gateway-only addition (not present in the other repos) ---
+
+[tests/**/*.cs]
+
+# ASP0000: "Do not call BuildServiceProvider in application code".
+# Building the provider is the assertion in the DI composition test, not a mistake.
+dotnet_diagnostic.ASP0000.severity = none
