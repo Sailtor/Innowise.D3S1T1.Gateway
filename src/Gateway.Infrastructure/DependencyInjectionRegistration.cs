@@ -1,3 +1,5 @@
+using Gateway.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,7 +14,18 @@ public static class DependencyInjectionRegistration
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
     {
-        // Phase 2: AddPooledDbContextFactory<MetricsReadDbContext> against ConnectionStrings:MetricsDb.
-        // This service is a read-only consumer of the DataProcessor schema: no migrations, ever.
+        string? connectionString = configuration.GetConnectionString("MetricsDb");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Connection string 'MetricsDb' is not configured.");
+        }
+
+        // Pooled factory rather than a scoped context: GraphQL resolves fields in parallel, and a
+        // read-only context has no shared change tracker to protect. Note that Phase 3's
+        // RegisterDbContextFactory does not create the factory - this call is what does.
+        services.AddPooledDbContextFactory<MetricsReadDbContext>(options => options
+            .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
+            .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTrackingWithIdentityResolution));
     }
 }
