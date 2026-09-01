@@ -7,6 +7,9 @@ public static class DependencyInjectionRegistration
 {
     public static void AddApplication(this IServiceCollection services, IConfiguration configuration)
     {
-        // Phase 4: register IMetricReadingQueryService and the aggregation input validators.
+        // Intentionally empty. The Application layer is pure - interfaces, models and the
+        // aggregation validator, none of which need registering. IMetricReadingQueryService
+        // is implemented in Infrastructure and registered there, next to the DbContext factory
+        // it depends on.
     }
 }

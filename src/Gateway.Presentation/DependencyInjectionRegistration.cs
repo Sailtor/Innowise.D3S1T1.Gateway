@@ -47,6 +47,7 @@ public static class DependencyInjectionRegistration
             .AddType<AirQualityReadingType>()
             .AddType<MotionReadingType>()
             .AddType<MetricReadingTypeEnumType>()
+            .AddType<MetricAggregationInputType>()
             .AddFiltering()
             .AddSorting()
 
