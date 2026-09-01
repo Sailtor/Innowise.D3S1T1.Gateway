@@ -1,4 +1,5 @@
 using Gateway.Application;
+using Gateway.Application.Interfaces;
 using Gateway.Infrastructure;
 using Gateway.Infrastructure.Persistence;
 using HotChocolate;
@@ -66,6 +67,83 @@ public class GraphQlSchemaTests
     }
 
     [Fact]
+    public async Task ExposesTheDashboardFields()
+    {
+        await using ServiceProvider provider = BuildProvider();
+
+        ISchemaDefinition schema = await GetSchemaAsync(provider);
+
+        foreach (string field in new[] { "metricReadings", "metricAggregation", "latestReadings", "rooms", "availableRooms" })
+        {
+            Assert.True(schema.QueryType.Fields.ContainsName(field), $"Query.{field} is missing.");
+        }
+    }
+
+    [Fact]
+    public async Task AggregationInputIsNamedForTheSchemaNotTheClrType()
+    {
+        await using ServiceProvider provider = BuildProvider();
+
+        ISchemaDefinition schema = await GetSchemaAsync(provider);
+
+        IInputObjectTypeDefinition input =
+            schema.Types.GetType<IInputObjectTypeDefinition>("MetricAggregationInput");
+
+        Assert.True(input.Fields.ContainsName("field"));
+        Assert.True(input.Fields.ContainsName("groupByRoom"));
+        Assert.True(input.Fields.ContainsName("interval"));
+
+        // Grouping by reading type is deliberately absent: the field already determines the type.
+        Assert.False(input.Fields.ContainsName("groupByType"));
+        Assert.False(schema.Types.ContainsName("MetricAggregationQueryInput"));
+    }
+
+    [Fact]
+    public async Task AggregationResultCarriesBucketAndStats()
+    {
+        await using ServiceProvider provider = BuildProvider();
+
+        ISchemaDefinition schema = await GetSchemaAsync(provider);
+
+        IObjectTypeDefinition bucket = schema.Types.GetType<IObjectTypeDefinition>("MetricAggregationBucket");
+
+        Assert.True(bucket.Fields.ContainsName("room"));
+        Assert.True(bucket.Fields.ContainsName("bucketStart"));
+        Assert.True(bucket.Fields.ContainsName("stats"));
+
+        IObjectTypeDefinition stats = schema.Types.GetType<IObjectTypeDefinition>("NumericStats");
+
+        foreach (string field in new[] { "count", "min", "max", "average", "sum" })
+        {
+            Assert.True(stats.Fields.ContainsName(field), $"NumericStats.{field} is missing.");
+        }
+
+        IObjectTypeDefinition summary = schema.Types.GetType<IObjectTypeDefinition>("RoomSummary");
+
+        Assert.True(summary.Fields.ContainsName("totalReadings"));
+        Assert.True(summary.Fields.ContainsName("latestReading"));
+        Assert.True(summary.Fields.ContainsName("latestByType"));
+    }
+
+    [Fact]
+    public async Task AggregationEnumsUseConstantCaseNames()
+    {
+        await using ServiceProvider provider = BuildProvider();
+
+        ISchemaDefinition schema = await GetSchemaAsync(provider);
+
+        IEnumTypeDefinition field = schema.Types.GetType<IEnumTypeDefinition>("AggregationField");
+
+        Assert.Contains(field.Values, v => v.Name == "ENERGY_AMOUNT");
+        Assert.Contains(field.Values, v => v.Name == "MOTION_DETECTED");
+
+        IEnumTypeDefinition interval = schema.Types.GetType<IEnumTypeDefinition>("TimeInterval");
+
+        Assert.Contains(interval.Values, v => v.Name == "MINUTE");
+        Assert.Contains(interval.Values, v => v.Name == "DAY");
+    }
+
+    [Fact]
     public async Task FilterAndSortSurfacesAreRestrictedToTheAllowlist()
     {
         await using ServiceProvider provider = BuildProvider();
@@ -108,6 +186,7 @@ public class GraphQlSchemaTests
         using ServiceProvider provider = BuildProvider();
 
         Assert.NotNull(provider.GetService<IDbContextFactory<MetricsReadDbContext>>());
+        Assert.NotNull(provider.GetService<IMetricReadingQueryService>());
     }
 
     private static ServiceProvider BuildProvider()

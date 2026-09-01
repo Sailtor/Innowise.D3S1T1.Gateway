@@ -1,4 +1,7 @@
+using Gateway.Application.Interfaces;
+using Gateway.Application.Models;
 using Gateway.Domain.Entities;
+using Gateway.Domain.Enums;
 using Gateway.Infrastructure.Persistence;
 using Gateway.Presentation.Types;
 using Gateway.Presentation.Types.Filters;
@@ -31,4 +34,54 @@ public class MetricsQuery
     [UseSorting(typeof(MetricReadingSortInputType))]
     public IQueryable<MetricReading> GetMetricReadings(MetricsReadDbContext context)
         => context.MetricReadings;
+
+    /// <summary>
+    /// Aggregates one numeric over an optional time and room grouping.
+    /// </summary>
+    /// <param name="input">What to aggregate and how to group it.</param>
+    /// <param name="queryService">Dashboard query service.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One bucket per group.</returns>
+    public Task<IReadOnlyList<MetricAggregationBucket>> GetMetricAggregationAsync(
+        MetricAggregationQuery input,
+        IMetricReadingQueryService queryService,
+        CancellationToken cancellationToken)
+        => queryService.AggregateAsync(input, cancellationToken);
+
+    /// <summary>
+    /// The most recent reading for each room and reading type.
+    /// </summary>
+    /// <param name="queryService">Dashboard query service.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="rooms">Rooms to restrict to. Omit for all rooms.</param>
+    /// <param name="types">Reading types to restrict to. Omit for all types.</param>
+    /// <returns>At most one reading per room and type.</returns>
+    public Task<IReadOnlyList<MetricReading>> GetLatestReadingsAsync(
+        IMetricReadingQueryService queryService,
+        CancellationToken cancellationToken,
+        IReadOnlyList<string>? rooms = null,
+        IReadOnlyList<MetricReadingType>? types = null)
+        => queryService.GetLatestAsync(rooms, types, cancellationToken);
+
+    /// <summary>
+    /// Per-room totals together with that room's latest readings, for the dashboard header.
+    /// </summary>
+    /// <param name="queryService">Dashboard query service.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One summary per room that has produced at least one reading.</returns>
+    public Task<IReadOnlyList<RoomSummary>> GetRoomsAsync(
+        IMetricReadingQueryService queryService,
+        CancellationToken cancellationToken)
+        => queryService.GetRoomSummariesAsync(cancellationToken);
+
+    /// <summary>
+    /// Distinct room names, for populating client-side filter controls.
+    /// </summary>
+    /// <param name="queryService">Dashboard query service.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Distinct room names in alphabetical order.</returns>
+    public Task<IReadOnlyList<string>> GetAvailableRoomsAsync(
+        IMetricReadingQueryService queryService,
+        CancellationToken cancellationToken)
+        => queryService.GetRoomsAsync(cancellationToken);
 }

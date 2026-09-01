@@ -1,4 +1,6 @@
+using Gateway.Application.Interfaces;
 using Gateway.Infrastructure.Persistence;
+using Gateway.Infrastructure.Queries;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,7 @@ public static class DependencyInjectionRegistration
     public static void AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         AddPersistence(services, configuration);
+        AddQueryServices(services);
     }
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
@@ -27,5 +30,16 @@ public static class DependencyInjectionRegistration
         services.AddPooledDbContextFactory<MetricsReadDbContext>(options => options
             .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
             .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTrackingWithIdentityResolution));
+    }
+
+    private static void AddQueryServices(IServiceCollection services)
+    {
+        services.AddMemoryCache();
+
+        // Singleton, not scoped: the service holds no state and no context of its own - it creates
+        // and disposes one per call from the (singleton) factory. That makes it safe to call from
+        // parallel resolvers and removes any question about which scope HotChocolate resolves it
+        // from.
+        services.AddSingleton<IMetricReadingQueryService, MetricReadingQueryService>();
     }
 }
