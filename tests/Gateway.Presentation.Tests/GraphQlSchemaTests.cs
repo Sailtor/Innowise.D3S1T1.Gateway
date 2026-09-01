@@ -8,6 +8,8 @@ using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using NSubstitute;
 
 namespace Gateway.Presentation.Tests;
 
@@ -200,6 +202,15 @@ public class GraphQlSchemaTests
 
         IServiceCollection services = new ServiceCollection();
 
+        // WebApplicationBuilder contributes these two; a bare ServiceCollection does not. The error
+        // filter resolves both from the application container when the executor is built, so
+        // without them every schema test fails inside GetSchemaAsync rather than in what it tests.
+        services.AddLogging();
+
+        IHostEnvironment environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(environment);
+
         // Same order as Program.cs: the point of this test is to compose the production graph,
         // so a layer registered there but not here would make it quietly less faithful.
         services.AddApplication(configuration);
@@ -225,6 +236,17 @@ public class GraphQlSchemaTests
 
             throw new InvalidOperationException(
                 "GraphQL schema failed to build:" + Environment.NewLine + details,
+                exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            // Anything registered into HotChocolate's schema services - error filters, diagnostic
+            // listeners - is activated when the executor is built, and a dependency it cannot
+            // resolve there surfaces here as a plain InvalidOperationException, not a
+            // SchemaException. Without this branch that failure reads as an unrelated crash.
+            throw new InvalidOperationException(
+                "GraphQL executor failed to build. A service registered into the schema container "
+                + "could not be activated - see the inner exception.",
                 exception);
         }
     }
