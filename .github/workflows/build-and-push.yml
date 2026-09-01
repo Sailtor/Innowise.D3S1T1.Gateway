@@ -1,0 +1,91 @@
+name: Build and Push Docker image to GHCR (with codestyle check and tests)
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: sailtor/innowise.d3s1t1.gateway
+  SOLUTION: ./Innowise.D3S1T1.Gateway.slnx
+
+# A second push to the same branch makes the first run's result irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codestyle-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # No GITHUB_TOKEN on restore and no packages:read permission: unlike the sibling services,
+    # the Gateway consumes no private packages, so it needs neither the sailtor feed nor a token.
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION }}
+    - name: Format
+      run: dotnet format ${{ env.SOLUTION }} --verify-no-changes --verbosity diagnostic --no-restore
+
+  test:
+    needs: codestyle-check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # Release, because that is what the image ships. Covers the schema-build test, which is the
+    # only thing that catches a GraphQL schema error before the first HTTP request.
+    - name: Test
+      run: >
+        dotnet test ${{ env.SOLUTION }}
+        --configuration Release
+        --logger "trx;LogFileName=test-results.trx"
+        --collect:"XPlat Code Coverage"
+        --results-directory ./TestResults
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: ./TestResults
+        if-no-files-found: error
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tagged by SHA as well as latest: :latest alone leaves no way to roll back or to say
+      # which commit is actually running.
+      - name: Build and Push docker image
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          file: ./src/Gateway.AppHost/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
