@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Gateway.Presentation.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" Version="16.6.1" />
     <PackageReference Include="HotChocolate.Data.EntityFramework" Version="16.6.1" />
     <PackageReference Include="HotChocolate.Diagnostics" Version="16.6.1" />

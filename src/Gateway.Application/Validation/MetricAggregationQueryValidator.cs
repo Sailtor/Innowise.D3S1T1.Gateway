@@ -1,3 +1,4 @@
+using FluentValidation;
 using Gateway.Application.Enums;
 using Gateway.Application.Models;
 
@@ -11,13 +12,12 @@ namespace Gateway.Application.Validation;
 /// a slow query and a denial of service.
 /// </para>
 /// <para>
-/// Plain argument exceptions for now. Phase 5 introduces FluentValidation together with the error
-/// filter that maps validation failures to a VALIDATION_FAILED GraphQL code - the two belong in one
-/// change, because until the filter exists a validation failure would reach the client masked as an
-/// unexpected internal error, which is worse than the message below.
+/// Failures surface as a FluentValidation ValidationException, which the presentation layer's error
+/// filter fans out into one GraphQL error per failure, each carrying a VALIDATION_FAILED code and
+/// the offending field name.
 /// </para>
 /// </summary>
-public static class MetricAggregationQueryValidator
+public sealed class MetricAggregationQueryValidator : AbstractValidator<MetricAggregationQuery>
 {
     /// <summary>
     /// Largest number of rooms a single query may name.
@@ -29,50 +29,37 @@ public static class MetricAggregationQueryValidator
     private static readonly TimeSpan MaxHourWindow = TimeSpan.FromDays(90);
 
     /// <summary>
-    /// Throws if the query would be unbounded or would produce an unreasonable number of buckets.
+    /// Initializes a new instance of the <see cref="MetricAggregationQueryValidator"/> class.
     /// </summary>
-    /// <param name="query">The query to check.</param>
-    public static void Validate(MetricAggregationQuery query)
+    public MetricAggregationQueryValidator()
     {
-        ArgumentNullException.ThrowIfNull(query);
+        RuleFor(query => query.To)
+            .Must((query, to) => query.From is not { } from || to is not { } upper || from <= upper)
+            .WithMessage("'to' must not be earlier than 'from'.");
 
-        if (query.From is { } from && query.To is { } to && from > to)
-        {
-            throw new ArgumentException("'from' must not be later than 'to'.", nameof(query));
-        }
+        RuleFor(query => query.Rooms)
+            .Must(rooms => rooms is null || rooms.Count <= MaxRooms)
+            .WithMessage($"At most {MaxRooms} rooms may be requested at once.");
 
-        if (query.Rooms is { Count: > MaxRooms })
-        {
-            throw new ArgumentException(
-                $"At most {MaxRooms} rooms may be requested at once; got {query.Rooms.Count}.",
-                nameof(query));
-        }
+        RuleFor(query => query.Interval)
+            .Must((query, _) => IsWindowBounded(query))
+            .When(query => query.Interval is TimeInterval.Minute or TimeInterval.Hour)
+            .WithMessage("A MINUTE or HOUR interval requires both 'from' and 'to', so the number of buckets is bounded.");
 
-        if (query.Interval is TimeInterval.Minute)
-        {
-            EnsureWindowWithin(query, MaxMinuteWindow, "MINUTE");
-        }
+        RuleFor(query => query.Interval)
+            .Must((query, _) => IsWindowWithin(query, MaxMinuteWindow))
+            .When(query => query.Interval is TimeInterval.Minute && IsWindowBounded(query))
+            .WithMessage($"A MINUTE interval supports a window of at most {MaxMinuteWindow.TotalHours:0} hours.");
 
-        if (query.Interval is TimeInterval.Hour)
-        {
-            EnsureWindowWithin(query, MaxHourWindow, "HOUR");
-        }
+        RuleFor(query => query.Interval)
+            .Must((query, _) => IsWindowWithin(query, MaxHourWindow))
+            .When(query => query.Interval is TimeInterval.Hour && IsWindowBounded(query))
+            .WithMessage($"An HOUR interval supports a window of at most {MaxHourWindow.TotalDays:0} days.");
     }
 
-    private static void EnsureWindowWithin(MetricAggregationQuery query, TimeSpan maximum, string intervalName)
-    {
-        if (query.From is not { } from || query.To is not { } to)
-        {
-            throw new ArgumentException(
-                $"A {intervalName} interval requires both 'from' and 'to', so the number of buckets is bounded.",
-                nameof(query));
-        }
+    private static bool IsWindowBounded(MetricAggregationQuery query)
+        => query.From.HasValue && query.To.HasValue;
 
-        if (to - from > maximum)
-        {
-            throw new ArgumentException(
-                $"A {intervalName} interval supports a window of at most {maximum.TotalHours:0} hours; got {(to - from).TotalHours:0}.",
-                nameof(query));
-        }
-    }
+    private static bool IsWindowWithin(MetricAggregationQuery query, TimeSpan maximum)
+        => !IsWindowBounded(query) || query.To!.Value - query.From!.Value <= maximum;
 }

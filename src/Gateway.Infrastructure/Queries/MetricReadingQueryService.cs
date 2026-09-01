@@ -1,7 +1,7 @@
+using FluentValidation;
 using Gateway.Application.Enums;
 using Gateway.Application.Interfaces;
 using Gateway.Application.Models;
-using Gateway.Application.Validation;
 using Gateway.Domain.Entities;
 using Gateway.Domain.Enums;
 using Gateway.Infrastructure.Persistence;
@@ -16,6 +16,7 @@ namespace Gateway.Infrastructure.Queries;
 /// </summary>
 internal sealed class MetricReadingQueryService(
     IDbContextFactory<MetricsReadDbContext> contextFactory,
+    IValidator<MetricAggregationQuery> aggregationValidator,
     IMemoryCache cache) : IMetricReadingQueryService
 {
     private const string RoomsCacheKey = "gateway:available-rooms";
@@ -33,7 +34,9 @@ internal sealed class MetricReadingQueryService(
         MetricAggregationQuery query,
         CancellationToken cancellationToken = default)
     {
-        MetricAggregationQueryValidator.Validate(query);
+        // Throws ValidationException, which the presentation error filter fans out into one
+        // GraphQL error per failure with a VALIDATION_FAILED code and the field name.
+        await aggregationValidator.ValidateAndThrowAsync(query, cancellationToken);
 
         await using MetricsReadDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 

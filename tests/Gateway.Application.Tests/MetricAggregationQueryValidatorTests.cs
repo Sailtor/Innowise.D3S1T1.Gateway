@@ -1,3 +1,4 @@
+using FluentValidation.Results;
 using Gateway.Application.Enums;
 using Gateway.Application.Models;
 using Gateway.Application.Validation;
@@ -8,38 +9,42 @@ public class MetricAggregationQueryValidatorTests
 {
     private static readonly DateTime From = new(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    private readonly MetricAggregationQueryValidator validator = new();
+
     [Fact]
     public void AcceptsAnUngroupedUnboundedQuery()
     {
-        MetricAggregationQueryValidator.Validate(new MetricAggregationQuery
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.EnergyAmount,
         });
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]
     public void RejectsAnInvertedWindow()
     {
-        MetricAggregationQuery query = new()
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.Co2,
             From = From,
             To = From.AddHours(-1),
-        };
+        });
 
-        Assert.Throws<ArgumentException>(() => MetricAggregationQueryValidator.Validate(query));
+        Assert.False(result.IsValid);
     }
 
     [Fact]
     public void RejectsMoreRoomsThanTheLimit()
     {
-        MetricAggregationQuery query = new()
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.Co2,
             Rooms = [.. Enumerable.Range(0, MetricAggregationQueryValidator.MaxRooms + 1).Select(i => $"room-{i}")],
-        };
+        });
 
-        Assert.Throws<ArgumentException>(() => MetricAggregationQueryValidator.Validate(query));
+        Assert.False(result.IsValid);
     }
 
     [Theory]
@@ -48,63 +53,80 @@ public class MetricAggregationQueryValidatorTests
     public void RejectsAFineIntervalWithoutABoundedWindow(TimeInterval interval)
     {
         // Unbounded plus fine-grained is the bucket explosion the limits exist to prevent.
-        MetricAggregationQuery query = new()
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.EnergyAmount,
             Interval = interval,
-        };
+        });
 
-        Assert.Throws<ArgumentException>(() => MetricAggregationQueryValidator.Validate(query));
+        Assert.False(result.IsValid);
     }
 
     [Fact]
     public void RejectsMinuteBucketsOverMoreThanADay()
     {
-        MetricAggregationQuery query = new()
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.EnergyAmount,
             From = From,
             To = From.AddHours(25),
             Interval = TimeInterval.Minute,
-        };
+        });
 
-        Assert.Throws<ArgumentException>(() => MetricAggregationQueryValidator.Validate(query));
+        Assert.False(result.IsValid);
     }
 
     [Fact]
     public void AcceptsMinuteBucketsWithinADay()
     {
-        MetricAggregationQueryValidator.Validate(new MetricAggregationQuery
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.EnergyAmount,
             From = From,
             To = From.AddHours(24),
             Interval = TimeInterval.Minute,
         });
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]
     public void RejectsHourBucketsOverMoreThanNinetyDays()
     {
-        MetricAggregationQuery query = new()
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.Humidity,
             From = From,
             To = From.AddDays(91),
             Interval = TimeInterval.Hour,
-        };
+        });
 
-        Assert.Throws<ArgumentException>(() => MetricAggregationQueryValidator.Validate(query));
+        Assert.False(result.IsValid);
     }
 
     [Fact]
     public void AcceptsDayBucketsOverAnUnboundedWindow()
     {
         // Daily buckets cannot explode: even a decade is a few thousand rows.
-        MetricAggregationQueryValidator.Validate(new MetricAggregationQuery
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
         {
             Field = AggregationField.MotionDetected,
             Interval = TimeInterval.Day,
         });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ReportsTheOffendingFieldSoTheClientCanRenderItInline()
+    {
+        ValidationResult result = validator.Validate(new MetricAggregationQuery
+        {
+            Field = AggregationField.Co2,
+            From = From,
+            To = From.AddHours(-1),
+        });
+
+        Assert.All(result.Errors, failure => Assert.False(string.IsNullOrWhiteSpace(failure.PropertyName)));
     }
 }

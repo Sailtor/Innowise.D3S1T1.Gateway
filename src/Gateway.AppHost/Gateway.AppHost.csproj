@@ -14,6 +14,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Stable only. The EF Core instrumentation and the Prometheus AspNetCore exporter have
+         never shipped a stable release, so traces come from the EF ActivitySource directly and
+         metrics leave over OTLP for a collector to expose to Prometheus. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Gateway.Infrastructure\Gateway.Infrastructure.csproj" />
     <ProjectReference Include="..\Gateway.Presentation\Gateway.Presentation.csproj" />
   </ItemGroup>

@@ -1,9 +1,12 @@
 using Gateway.Infrastructure.Persistence;
+using Gateway.Presentation.Errors;
 using Gateway.Presentation.Health;
 using Gateway.Presentation.Queries;
 using Gateway.Presentation.Types;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Gateway.Presentation;
 
@@ -17,16 +20,18 @@ public static class DependencyInjectionRegistration
 
     private const int MaxExecutionDepth = 8;
 
+    private static readonly TimeSpan ExecutionTimeout = TimeSpan.FromSeconds(30);
+
     public static void AddPresentation(this IServiceCollection services, IConfiguration configuration)
     {
         AddCorsPolicy(services, configuration);
         AddHealthChecks(services);
-        AddGraphQl(services);
+        AddGraphQl(services, configuration);
     }
 
-    private static void AddGraphQl(IServiceCollection services)
+    private static void AddGraphQl(IServiceCollection services, IConfiguration configuration)
     {
-        services
+        var builder = services
             .AddGraphQLServer()
 
             // Hands each resolver its own pooled context and disposes it afterwards. Note this does
@@ -67,7 +72,30 @@ public static class DependencyInjectionRegistration
                 options.MaxFieldCost = MaxCost;
                 options.MaxTypeCost = MaxCost;
             })
-            .AddMaxExecutionDepthRule(MaxExecutionDepth);
+            .AddMaxExecutionDepthRule(MaxExecutionDepth)
+            .ModifyRequestOptions(options => options.ExecutionTimeout = ExecutionTimeout)
+
+            // Constructed by hand rather than resolved: error filters are activated from
+            // HotChocolate's schema service provider, a separate container with no logging and no
+            // hosting services registered. Constructor injection there fails when the executor is
+            // built. GetRootServiceProvider bridges back to the application container.
+            .AddErrorFilter(schemaServices =>
+            {
+                IServiceProvider app = schemaServices.GetRootServiceProvider();
+
+                return new GraphQlErrorFilter(
+                    app.GetRequiredService<ILogger<GraphQlErrorFilter>>(),
+                    app.GetRequiredService<IHostEnvironment>());
+            });
+
+        // HotChocolate disables introspection outside Development by default, which is the right
+        // default for a public API and the wrong one for a demo whose frontend needs codegen. This
+        // opt-in re-enables it without pretending the deployment is a development environment.
+        // Left unset, the environment-based default stands - so Nitro still works locally.
+        if (configuration.GetValue<bool>("GraphQL:AllowIntrospection"))
+        {
+            builder.DisableIntrospection(false);
+        }
     }
 
     private static void AddCorsPolicy(IServiceCollection services, IConfiguration configuration)
