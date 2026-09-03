@@ -1,4 +1,4 @@
-name: Build and Push Docker image to GHCR (with codestyle check and tests)
+name: Build and Push Docker image to GHCR (with codestyle check, tests and schema export)
 
 on:
   push:
@@ -62,8 +62,39 @@ jobs:
         path: ./TestResults
         if-no-files-found: error
 
+  # The SDL the frontend's Apollo/URQL codegen consumes, and a reviewable artifact of what the
+  # schema looked like at this commit. Produced by HotChocolate's CLI through the app's own DI
+  # graph rather than by introspecting a running instance, so it needs no database and no server.
+  export-schema:
+    needs: codestyle-check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # AddInfrastructure refuses to start without a connection string, and building the schema goes
+    # through it. Nothing connects during an export, so a syntactically valid dummy is enough.
+    - name: Export schema
+      env:
+        ConnectionStrings__MetricsDb: Server=localhost;Database=SchemaExport;Integrated Security=true
+      run: >
+        dotnet run
+        --project src/Gateway.AppHost/Gateway.AppHost.csproj
+        --configuration Release
+        --
+        schema export --output schema.graphql
+    - name: Upload schema
+      uses: actions/upload-artifact@v4
+      with:
+        name: graphql-schema
+        path: schema.graphql
+        if-no-files-found: error
+
   build-and-push:
-    needs: test
+    needs: [test, export-schema]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

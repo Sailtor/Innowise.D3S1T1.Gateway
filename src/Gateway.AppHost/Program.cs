@@ -55,7 +55,12 @@ try
     app.MapGraphQL("/graphql")
         .WithOptions(o => o.Tool.Enable = app.Environment.IsDevelopment());
 
-    app.Run();
+    // Runs the host when there are no arguments, and HotChocolate's CLI when there are - which
+    // is what lets CI produce the SDL with `dotnet run -- schema export --output schema.graphql`
+    // instead of standing the service up and introspecting it over HTTP. The command builds the
+    // schema through this same DI graph, so it needs ConnectionStrings:MetricsDb to be set - any
+    // syntactically valid value will do, because nothing ever connects.
+    return await app.RunWithGraphQLCommandsAsync(args);
 }
 catch (Exception exception) when (exception is not HostAbortedException)
 {
