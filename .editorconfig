@@ -40,8 +40,8 @@ dotnet_diagnostic.CA1062.severity = suggestion
 # CA1031 Catch more specific allowed excaption type
 dotnet_diagnostic.CA1031.severity = suggestion
 
-# CA2007 Catch more specific allowed excaption type
-dotnet_diagnostic.CA2007.severity = suggestion
+# CA2007 Consider calling ConfigureAwait on awaited task
+dotnet_diagnostic.CA2007.severity = none
 
 # --- Gateway-only addition (not present in the other repos) ---
 
@@ -50,3 +50,13 @@ dotnet_diagnostic.CA2007.severity = suggestion
 # ASP0000: "Do not call BuildServiceProvider in application code".
 # Building the provider is the assertion in the DI composition test, not a mistake.
 dotnet_diagnostic.ASP0000.severity = none
+
+# CA1515: "types can be made internal". Test classes, xunit collection definitions and collection
+# fixtures are instantiated and discovered by the test framework, which expects them public - this
+# rule is aimed at application assemblies, where nothing outside references the API.
+dotnet_diagnostic.CA1515.severity = none
+
+# CA2100: SQL injection review. The only SQL these tests execute is a const seed script and the
+# .sql schema file this project builds into its own output directory - no value reaches a command
+# from outside the test assembly.
+dotnet_diagnostic.CA2100.severity = none

@@ -111,11 +111,14 @@ internal sealed class MetricReadingQueryService(
             })
             .ToListAsync(cancellationToken);
 
-        // Ordinal is safe now: every key came out of the same query, so the representatives match.
+        // One query means the representatives are self-consistent, but the comparer still has to
+        // agree with the database about what counts as one room: SQL folded these keys under the
+        // column's collation, which is case-insensitive by default. Grouping ordinally here would
+        // split 'Kitchen' and 'kitchen' back into two summaries with divided totals.
         return
         [
             .. perRoomAndType
-                .GroupBy(row => row.Room, StringComparer.Ordinal)
+                .GroupBy(row => row.Room, StringComparer.OrdinalIgnoreCase)
                 .Select(BuildSummary)
                 .OrderBy(summary => summary.Room, StringComparer.Ordinal),
         ];
