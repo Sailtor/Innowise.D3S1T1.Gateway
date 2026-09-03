@@ -25,8 +25,7 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "ConnectionStrings__MetricsDb": "Server=host.docker.internal,1433;Database=DataProcessor;User Id=sa;Password=Local_Dev_P4ssw0rd;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True"
       },
-      "httpPort": 18080,
-      "sslPort": 18081,
+      "publishAllPorts": true,
       "useSSL": true
     }
   },

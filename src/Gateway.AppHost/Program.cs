@@ -69,5 +69,5 @@ catch (Exception exception) when (exception is not HostAbortedException)
 }
 finally
 {
-    Log.CloseAndFlush();
+    await Log.CloseAndFlushAsync();
 }
