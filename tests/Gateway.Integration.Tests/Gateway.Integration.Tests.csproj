@@ -40,6 +40,10 @@
   <ItemGroup>
     <!-- The writer's schema, applied to the container before any test runs. -->
     <None Update="Schema\DataProcessorSchema.sql" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Committed response baselines, read from the output directory by ResponseSnapshotTests.
+         Update rather than Include: the SDK's default globs already pick these up as None items,
+         and Include would add them a second time. -->
+    <None Update="Snapshots\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

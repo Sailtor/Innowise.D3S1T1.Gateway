@@ -149,6 +149,19 @@ The integration project needs a Docker daemon (it pulls a pinned SQL Server
 image, ~2 GB RAM, amd64). The other three projects are pure unit tests and run
 anywhere.
 
+Two suites are snapshot-based and **fail by design until their baseline exists**,
+rather than writing one silently — a snapshot nobody read is not a test:
+
+* `SchemaSnapshotTests` pins the SDL against `tests/Gateway.Presentation.Tests/schema.graphql`.
+* `ResponseSnapshotTests` pins the JSON each dashboard query returns, one file
+  per query under `tests/Gateway.Integration.Tests/Snapshots/`.
+
+On a first run each writes a `.json.actual` (or `.graphql.actual`) beside the
+expected path in the **output** directory and fails with the path in the
+message. Review it, copy it to the source tree under the name the message
+gives, and re-run. After that any change to the schema or to a response shape
+shows up as a diff in the pull request, next to the change that caused it.
+
 ### Exporting the SDL
 
 ```bash
@@ -369,9 +382,69 @@ describe the caller's own mistake, so they pass through unmasked.
 ## CI
 
 `.github/workflows/build-and-push.yml`: `codestyle-check` → (`test`,
-`export-schema`) → `build-and-push`. PRs are gated; only pushes publish an
-image, tagged both `:latest` and `:${{ github.sha }}` so a deploy can name a
-commit. Unlike the sibling repos, restore needs no `GITHUB_TOKEN` and the
+`export-schema`) → `smoke` → `build-and-push`. PRs are gated; only pushes
+publish an image, tagged both `:latest` and `:${{ github.sha }}` so a deploy can
+name a commit. Unlike the sibling repos, restore needs no `GITHUB_TOKEN` and the
 Dockerfile no build secret — the Gateway consumes no private packages.
 
+The `smoke` job is what the unit and integration suites cannot cover. It builds
+the image, starts a real SQL Server beside it, applies the writer's schema from
+the same checked-in copy the integration tests use, and then asserts that the
+container comes up, `/health` goes green, `/health/live` answers separately, and
+a GraphQL query returns without errors. It also runs **the exact healthcheck
+command `docker-compose.yml` declares** inside the image — that probe uses bash's
+`/dev/tcp` because the runtime image ships no curl or wget, and it must be `CMD`
+rather than `CMD-SHELL` since `/bin/sh` there is dash and has no `/dev/tcp`. A
+broken probe leaves a perfectly healthy service permanently unhealthy, which is
+invisible without running it, so it is checked on every pull request.
+
 Image: `ghcr.io/sailtor/innowise.d3s1t1.gateway`.
+
+---
+
+## TODO
+
+Nothing here is required for the service to do its job; these are the next
+things worth building, and the first is the one this design actually invites.
+
+### A scheduled job that fails when the read model drifts
+
+The whole read-model decision above rests on one integration test: it applies
+`DataProcessorSchema.sql` — a **checked-in copy** of the writer's schema — and
+runs every Gateway query against it. That copy is refreshed by hand, so it can
+drift from the writer, and if it does, the tests keep passing while production
+breaks. The guard has a gap in exactly the shape of the risk it guards.
+
+The fix is a scheduled workflow that regenerates the script from
+`DataProcessor` and fails on a diff:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 6 * * 1'      # Monday morning, before anyone needs the answer
+  workflow_dispatch:
+
+jobs:
+  schema-drift:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out both repos, regenerate the script from the writer's migrations
+      # with `dotnet ef migrations script --idempotent`, then:
+      #   git diff --exit-code -- tests/.../Schema/DataProcessorSchema.sql
+      # A non-zero exit is the alarm: the writer moved and this repo has not.
+```
+
+Two details decide whether it is worth having. It needs read access to the
+`DataProcessor` repository, which for a private repo means a token rather than
+the default `GITHUB_TOKEN`. And it should open an issue or fail loudly rather
+than auto-committing the regenerated script — silently accepting the new schema
+would defeat the purpose, since the point is that a human reads the diff and
+decides whether the Gateway's entities need to change with it.
+
+### Smaller things
+
+* **Indexes tuned to these query shapes.** Approved in principle and deferred
+  until the real SQL existed; it now does. Lands as a migration in
+  `DataProcessor`, which owns the schema — see that repo's README.
+* **The bonus `deploy` job.** CI now smoke-tests the image it is about to
+  publish (see below), but nothing deploys it anywhere.

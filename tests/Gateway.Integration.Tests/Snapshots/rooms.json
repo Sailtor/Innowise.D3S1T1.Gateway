@@ -1,0 +1,46 @@
+{
+  "data": {
+    "availableRooms": [
+      "kitchen",
+      "office"
+    ],
+    "rooms": [
+      {
+        "room": "kitchen",
+        "totalReadings": 5,
+        "latestReading": {
+          "type": "ENERGY",
+          "receivedAt": "2026-08-18T11:45:00Z"
+        },
+        "latestByType": [
+          {
+            "type": "ENERGY",
+            "receivedAt": "2026-08-18T11:45:00Z"
+          },
+          {
+            "type": "AIR_QUALITY",
+            "receivedAt": "2026-08-18T11:30:00Z"
+          }
+        ]
+      },
+      {
+        "room": "office",
+        "totalReadings": 3,
+        "latestReading": {
+          "type": "MOTION",
+          "receivedAt": "2026-08-18T11:30:00Z"
+        },
+        "latestByType": [
+          {
+            "type": "AIR_QUALITY",
+            "receivedAt": "2026-08-18T10:00:00Z"
+          },
+          {
+            "type": "MOTION",
+            "receivedAt": "2026-08-18T11:30:00Z"
+          }
+        ]
+      }
+    ]
+  }
+}

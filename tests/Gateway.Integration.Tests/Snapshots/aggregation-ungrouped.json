@@ -1,0 +1,17 @@
+{
+  "data": {
+    "metricAggregation": [
+      {
+        "room": null,
+        "bucketStart": null,
+        "stats": {
+          "count": 4,
+          "min": 400,
+          "max": 1000,
+          "average": 625,
+          "sum": 2500
+        }
+      }
+    ]
+  }
+}

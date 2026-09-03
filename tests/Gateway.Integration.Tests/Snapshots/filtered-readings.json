@@ -1,0 +1,27 @@
+{
+  "data": {
+    "metricReadings": {
+      "totalCount": 3,
+      "items": [
+        {
+          "room": "kitchen",
+          "type": "AIR_QUALITY",
+          "receivedAt": "2026-08-18T10:00:00Z",
+          "co2": 400
+        },
+        {
+          "room": "kitchen",
+          "type": "AIR_QUALITY",
+          "receivedAt": "2026-08-18T10:30:00Z",
+          "co2": 500
+        },
+        {
+          "room": "kitchen",
+          "type": "AIR_QUALITY",
+          "receivedAt": "2026-08-18T11:30:00Z",
+          "co2": 600
+        }
+      ]
+    }
+  }
+}
