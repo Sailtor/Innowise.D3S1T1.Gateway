@@ -1,0 +1,30 @@
+{
+  "data": {
+    "metricAggregation": [
+      {
+        "room": "kitchen",
+        "bucketStart": "2026-08-18T10:00:00Z",
+        "stats": {
+          "count": 2,
+          "average": 450
+        }
+      },
+      {
+        "room": "kitchen",
+        "bucketStart": "2026-08-18T11:00:00Z",
+        "stats": {
+          "count": 1,
+          "average": 600
+        }
+      },
+      {
+        "room": "office",
+        "bucketStart": "2026-08-18T10:00:00Z",
+        "stats": {
+          "count": 1,
+          "average": 1000
+        }
+      }
+    ]
+  }
+}

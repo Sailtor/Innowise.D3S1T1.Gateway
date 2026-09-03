@@ -1,0 +1,30 @@
+{
+  "data": {
+    "latestReadings": [
+      {
+        "room": "kitchen",
+        "type": "ENERGY",
+        "receivedAt": "2026-08-18T11:45:00Z",
+        "energyAmount": 2.5
+      },
+      {
+        "room": "kitchen",
+        "type": "AIR_QUALITY",
+        "receivedAt": "2026-08-18T11:30:00Z",
+        "co2": 600
+      },
+      {
+        "room": "office",
+        "type": "AIR_QUALITY",
+        "receivedAt": "2026-08-18T10:00:00Z",
+        "co2": 1000
+      },
+      {
+        "room": "office",
+        "type": "MOTION",
+        "receivedAt": "2026-08-18T11:30:00Z",
+        "isMotionDetected": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "metricAggregation": [
+      {
+        "room": "office",
+        "stats": {
+          "count": 2,
+          "min": 0,
+          "max": 1,
+          "average": 0.5,
+          "sum": 1
+        }
+      }
+    ]
+  }
+}

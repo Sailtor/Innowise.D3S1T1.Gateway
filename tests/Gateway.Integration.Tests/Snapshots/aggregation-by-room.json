@@ -1,0 +1,28 @@
+{
+  "data": {
+    "metricAggregation": [
+      {
+        "room": "kitchen",
+        "bucketStart": null,
+        "stats": {
+          "count": 3,
+          "min": 400,
+          "max": 600,
+          "average": 500,
+          "sum": 1500
+        }
+      },
+      {
+        "room": "office",
+        "bucketStart": null,
+        "stats": {
+          "count": 1,
+          "min": 1000,
+          "max": 1000,
+          "average": 1000,
+          "sum": 1000
+        }
+      }
+    ]
+  }
+}
