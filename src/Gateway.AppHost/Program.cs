@@ -2,6 +2,7 @@ using Gateway.AppHost;
 using Gateway.Application;
 using Gateway.Infrastructure;
 using Gateway.Presentation;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
 using Serilog.Events;
 
@@ -28,10 +29,26 @@ try
     // First in the pipeline so its one-line-per-request summary times everything below it.
     app.UseSerilogRequestLogging();
 
-    app.UseHttpsRedirection();
+    // Deliberately no UseHttpsRedirection(). In a container there is no dev certificate and, in
+    // compose, no HTTPS port - so it would either no-op with a warning or 307 clients to a port
+    // nothing listens on. TLS belongs at the edge, not in this process.
     app.UseCors();
 
+    // Readiness: runs the metrics-db check. This is what the image's HEALTHCHECK and compose's
+    // service_healthy gate point at.
     app.MapHealthChecks("/health");
+
+    // Liveness: no checks at all, so it answers "the process is up and serving" even while the
+    // database is unreachable. Separate from /health so a restart-on-failure probe cannot
+    // restart-loop this service over a schema it does not own.
+    app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+
+    if (app.Environment.IsDevelopment())
+    {
+        // Nothing else is mapped at the root, and a 404 there reads as "the service is down" when
+        // it is perfectly fine. Only useful where Nitro is actually served, hence the guard.
+        app.MapGet("/", () => Results.Redirect("/graphql"));
+    }
 
     // Nitro (the built-in IDE) is this service's API documentation, but it has no business being
     // served in production. Introspection is governed separately by GraphQL:AllowIntrospection.

@@ -28,3 +28,11 @@ README.md
 !.git/config
 !.git/packed-refs
 !.git/refs/heads/**
+
+# --- Gateway-only additions (the rest of this file matches the sibling services verbatim) ---
+
+# The Dockerfile builds src/Gateway.AppHost, never the solution, so neither of these reaches the
+# image. Excluding them keeps the `COPY . .` layer from being invalidated by a test or workflow
+# edit, which is most of the churn in this repo.
+tests
+.github
