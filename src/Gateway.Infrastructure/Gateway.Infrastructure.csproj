@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The integration suite constructs MetricReadingQueryService directly, so that it can supply
+         a context factory carrying a SQL-capturing interceptor. Going through DI instead would
+         hide the generated SQL, which is half of what those tests assert on. -->
+    <InternalsVisibleTo Include="Gateway.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Gateway.Application\Gateway.Application.csproj" />
   </ItemGroup>
 

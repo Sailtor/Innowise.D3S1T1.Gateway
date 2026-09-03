@@ -25,6 +25,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Brings the Testcontainers core transitively; needs a Docker daemon at test time. -->
+    <PackageReference Include="Testcontainers.MsSql" Version="4.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
@@ -33,7 +38,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Gateway.AppHost\Gateway.AppHost.csproj" />
+    <!-- The writer's schema, applied to the container before any test runs. -->
+    <None Update="Schema\DataProcessorSchema.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Gateway.Application\Gateway.Application.csproj" />
     <ProjectReference Include="..\..\src\Gateway.Infrastructure\Gateway.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Gateway.Presentation\Gateway.Presentation.csproj" />
