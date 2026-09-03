@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Adds the `schema export` verb to this host, which is how CI produces schema.graphql for
+         the frontend's codegen. Only meaningful together with RunWithGraphQLCommandsAsync in
+         Program.cs; without that call the argument is parsed by nobody and the host just starts. -->
+    <PackageReference Include="HotChocolate.AspNetCore.CommandLine" Version="16.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
   </ItemGroup>
