@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# The SDL produced by `dotnet run -- schema export`. Regenerated per commit and published as a
+# CI artifact, so it is never committed. The reviewed copy the snapshot test compares against
+# lives at tests/Gateway.Presentation.Tests/schema.graphql and is untouched by these rules.
+/schema.graphql
+/src/**/schema.graphql

@@ -80,12 +80,24 @@ jobs:
     - name: Export schema
       env:
         ConnectionStrings__MetricsDb: Server=localhost;Database=SchemaExport;Integrated Security=true
+      # The output path is absolute on purpose. `dotnet run --project` starts the app with its
+      # working directory set to the project folder, not the repository root, so a relative
+      # --output would land in src/Gateway.AppHost/ while upload-artifact resolves its path
+      # against the workspace root - the export succeeds and the upload then finds nothing.
+      # --no-launch-profile keeps launchSettings.json out of it: its http profile would otherwise
+      # export the schema under ASPNETCORE_ENVIRONMENT=Development, which is not the environment
+      # the image runs.
       run: >
         dotnet run
         --project src/Gateway.AppHost/Gateway.AppHost.csproj
         --configuration Release
+        --no-launch-profile
         --
-        schema export --output schema.graphql
+        schema export --output "${{ github.workspace }}/schema.graphql"
+    # Fails here, with a readable message, if the export ever silently stops producing the file -
+    # rather than several lines later inside the upload action.
+    - name: Verify the schema was written
+      run: test -s schema.graphql
     - name: Upload schema
       uses: actions/upload-artifact@v4
       with:
@@ -93,8 +105,122 @@ jobs:
         path: schema.graphql
         if-no-files-found: error
 
+  # Runs the image the Dockerfile actually produces against a real SQL Server, and asserts the
+  # things a unit test cannot: that the published container starts, that it reads the writer's
+  # schema, that /health goes green, that a GraphQL query answers - and that the healthcheck
+  # command the compose file declares works inside this image. That last one is the reason this
+  # job exists: `CMD-SHELL` there would look correct and silently never pass, because /bin/sh in
+  # the runtime image is dash and has no /dev/tcp. Only a real container can tell you.
+  smoke:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Ephemeral: this database lives for the length of this job, on this runner, and is never
+      # published. It still has to satisfy SQL Server's complexity rules.
+      SA_PASSWORD: Smoke_Test_P4ssw0rd
+      MSSQL_IMAGE: mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04
+      DB_NAME: DataProcessor
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Build the image
+      run: docker build -t gateway:smoke -f src/Gateway.AppHost/Dockerfile .
+
+    - name: Start SQL Server
+      run: |
+        docker network create smoke
+        docker run -d --name mssql --network smoke \
+          -e ACCEPT_EULA=Y -e MSSQL_PID=Developer \
+          -e MSSQL_SA_PASSWORD="$SA_PASSWORD" \
+          "$MSSQL_IMAGE"
+
+    - name: Wait for SQL Server
+      run: |
+        for i in $(seq 1 60); do
+          if docker exec mssql /opt/mssql-tools18/bin/sqlcmd \
+               -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" -b -o /dev/null; then
+            echo "SQL Server is up after ${i}s."
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "SQL Server did not become ready." >&2
+        docker logs mssql
+        exit 1
+
+    - name: Apply the writer's schema
+      # The Gateway never migrates anything, so the schema has to come from outside it. This is the
+      # same checked-in copy of DataProcessor's migration that the integration suite uses, which
+      # means a drift between the two would fail here too.
+      run: |
+        docker exec mssql /opt/mssql-tools18/bin/sqlcmd \
+          -S localhost -U sa -P "$SA_PASSWORD" -C -b \
+          -Q "IF DB_ID('$DB_NAME') IS NULL CREATE DATABASE [$DB_NAME];"
+        docker cp tests/Gateway.Integration.Tests/Schema/DataProcessorSchema.sql mssql:/tmp/schema.sql
+        docker exec mssql /opt/mssql-tools18/bin/sqlcmd \
+          -S localhost -U sa -P "$SA_PASSWORD" -C -b -d "$DB_NAME" -i /tmp/schema.sql
+
+    - name: Start the Gateway
+      run: |
+        docker run -d --name gateway --network smoke -p 8080:8080 \
+          -e ASPNETCORE_ENVIRONMENT=Development \
+          -e ASPNETCORE_URLS=http://+:8080 \
+          -e Serilog__UseJsonConsole=true \
+          -e ConnectionStrings__MetricsDb="Server=mssql,1433;Database=$DB_NAME;User Id=sa;Password=$SA_PASSWORD;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True" \
+          gateway:smoke
+
+    - name: Wait for readiness
+      # /health runs the metrics-db check, so a 200 here means the container started AND the schema
+      # is queryable through the Gateway's own read model.
+      run: |
+        for i in $(seq 1 60); do
+          if curl -fsS http://localhost:8080/health > /dev/null; then
+            echo "Gateway reported healthy after ${i}s."
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Gateway never reported healthy." >&2
+        exit 1
+
+    - name: Check liveness answers separately
+      run: curl -fsS http://localhost:8080/health/live > /dev/null
+
+    - name: Verify the compose healthcheck command works in this image
+      # Byte-for-byte the probe docker-compose.yml declares. It must be bash, not sh: dash has no
+      # /dev/tcp. If this step fails, the compose healthcheck is broken even though the service is
+      # perfectly healthy - a failure mode that is invisible without running it.
+      run: |
+        docker exec gateway bash -c "exec 3<>/dev/tcp/127.0.0.1/8080 && \
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && \
+          head -n 1 <&3 | grep -q ' 200 '"
+
+    - name: Query the API
+      # An empty table is the expected state here - nothing has ingested anything. What is being
+      # asserted is that the query executes and comes back without a GraphQL error, which means the
+      # read model, the schema and the connection all line up against the real writer schema.
+      run: |
+        response=$(curl -fsS http://localhost:8080/graphql \
+          -H 'Content-Type: application/json' \
+          -d '{"query":"{ availableRooms rooms { room totalReadings } metricAggregation(input: { field: CO2 }) { stats { count } } }"}')
+        echo "$response"
+        if echo "$response" | grep -q '"errors"'; then
+          echo "GraphQL returned errors." >&2
+          exit 1
+        fi
+        echo "$response" | grep -q '"availableRooms"' || {
+          echo "Response did not contain the expected fields." >&2
+          exit 1
+        }
+
+    - name: Gateway logs
+      if: always()
+      run: docker logs gateway
+
   build-and-push:
-    needs: [test, export-schema]
+    needs: [test, export-schema, smoke]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

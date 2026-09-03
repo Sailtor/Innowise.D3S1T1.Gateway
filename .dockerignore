@@ -36,3 +36,7 @@ README.md
 # edit, which is most of the churn in this repo.
 tests
 .github
+
+# Documentation, for the same cache reason. The verbatim block above already excludes README.md by
+# name; this generalises it, so a new .md file cannot silently start invalidating the build layer.
+**/*.md

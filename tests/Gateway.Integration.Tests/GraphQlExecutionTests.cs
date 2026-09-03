@@ -1,7 +1,10 @@
+using System.Globalization;
+using System.Text.Json;
 using Gateway.Application;
 using Gateway.Infrastructure;
 using Gateway.Integration.Tests.Infrastructure;
 using Gateway.Presentation;
+using HotChocolate;
 using HotChocolate.Execution;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +81,65 @@ public class GraphQlExecutionTests(SqlServerFixture fixture)
             """;
 
         await AssertNoErrorsAsync(Query);
+    }
+
+    [Fact]
+    public async Task BucketsTheWindowInUtcRegardlessOfTheHostTimeZone()
+    {
+        // The only place in the suite where `from`/`to` arrive through the GraphQL DateTime scalar
+        // rather than as CLR DateTimes. That scalar coerces to DateTimeOffset and the type
+        // converter then narrows it to the DateTime? on the input model - so if the narrowing ever
+        // went through local time, this window would shift by the host's offset and the 10:00-12:00
+        // rows would fall outside an 18 August window on any machine that is not UTC. It would
+        // pass on a UTC CI runner and fail on a developer's laptop, which is the worst way for a
+        // test to be wrong.
+        const string Query = """
+            {
+              metricAggregation(
+                input: {
+                  field: CO2
+                  interval: HOUR
+                  groupByRoom: true
+                  from: "2026-08-18T00:00:00Z"
+                  to: "2026-08-19T00:00:00Z"
+                }
+              ) {
+                room
+                bucketStart
+                stats { count }
+              }
+            }
+            """;
+
+        await using ServiceProvider provider = BuildProvider();
+        IRequestExecutor executor = await provider.GetRequestExecutorAsync(
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        await using IExecutionResult result = await executor.ExecuteAsync(
+            Query, TestContext.Current.CancellationToken);
+
+        OperationResult operationResult = Assert.IsType<OperationResult>(result);
+
+        Assert.True(
+            operationResult.Errors is null or { Count: 0 },
+            string.Join(Environment.NewLine, operationResult.Errors?.Select(e => e.Message) ?? []));
+
+        using JsonDocument document = JsonDocument.Parse(operationResult.ToJson());
+        JsonElement buckets = document.RootElement.GetProperty("data").GetProperty("metricAggregation");
+
+        // kitchen has air quality at 10:00, 10:30 and 11:30; office has one at 10:00. Ordered by
+        // room then bucket, that is three buckets and the first starts at 10:00 UTC.
+        Assert.Equal(3, buckets.GetArrayLength());
+
+        // Parsed rather than string-matched: the assertion is about the instant, not about how the
+        // scalar chooses to format it.
+        string bucketStart = buckets[0].GetProperty("bucketStart").GetString()!;
+
+        Assert.Equal(
+            new DateTimeOffset(2026, 8, 18, 10, 0, 0, TimeSpan.Zero),
+            DateTimeOffset.Parse(bucketStart, CultureInfo.InvariantCulture));
+
+        Assert.Equal(2, buckets[0].GetProperty("stats").GetProperty("count").GetInt32());
     }
 
     [Fact]
