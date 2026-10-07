@@ -17,6 +17,7 @@ namespace Gateway.Infrastructure.Queries;
 internal sealed class MetricReadingQueryService(
     IDbContextFactory<MetricsReadDbContext> contextFactory,
     IValidator<MetricAggregationQuery> aggregationValidator,
+    IValidator<ReadingsQuery> readingsValidator,
     IMemoryCache cache) : IMetricReadingQueryService
 {
     private const string RoomsCacheKey = "gateway:available-rooms";
@@ -145,6 +146,91 @@ internal sealed class MetricReadingQueryService(
 
         return rooms;
     }
+
+    public async Task<ReadingsPage> GetReadingsAsync(
+        ReadingsQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        // Throws ValidationException, which the REST endpoint maps to a 400 ValidationProblem - the
+        // Minimal API equivalent of what GraphQlErrorFilter does for the aggregation query.
+        await readingsValidator.ValidateAndThrowAsync(query, cancellationToken);
+
+        await using MetricsReadDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        IQueryable<MetricReading> filtered = ApplyReadingsFilter(context.MetricReadings, query);
+
+        int totalCount = await filtered.CountAsync(cancellationToken);
+
+        List<MetricReading> items = await ApplyReadingsSort(filtered, query.SortBy, query.SortDir)
+            .Skip(query.Skip)
+            .Take(query.Take)
+            .ToListAsync(cancellationToken);
+
+        return new ReadingsPage(items, totalCount);
+    }
+
+    /// <summary>
+    /// The four filterable fields, mirroring <c>MetricReadingFilterInputType</c>'s allowlist exactly -
+    /// REST exposes no wider a filter surface than GraphQL already does.
+    /// </summary>
+    private static IQueryable<MetricReading> ApplyReadingsFilter(IQueryable<MetricReading> source, ReadingsQuery query)
+    {
+        IQueryable<MetricReading> filtered = source;
+
+        if (query.Room is { } room)
+        {
+            filtered = filtered.Where(reading => reading.Room == room);
+        }
+
+        if (query.Type is { } type)
+        {
+            filtered = filtered.Where(reading => reading.ReadingType == type);
+        }
+
+        if (query.ReceivedAtFrom is { } receivedFrom)
+        {
+            filtered = filtered.Where(reading => reading.ReceivedAtUtc >= receivedFrom);
+        }
+
+        if (query.ReceivedAtTo is { } receivedTo)
+        {
+            filtered = filtered.Where(reading => reading.ReceivedAtUtc < receivedTo);
+        }
+
+        if (query.IngestedAtFrom is { } ingestedFrom)
+        {
+            filtered = filtered.Where(reading => reading.IngestedAtUtc >= ingestedFrom);
+        }
+
+        if (query.IngestedAtTo is { } ingestedTo)
+        {
+            filtered = filtered.Where(reading => reading.IngestedAtUtc < ingestedTo);
+        }
+
+        return filtered;
+    }
+
+    /// <summary>
+    /// The four sortable fields in both directions, written out rather than composed from a
+    /// dynamically-built expression - the same reasoning <see cref="GroupAndAggregate"/> gives for its
+    /// own fixed set of shapes.
+    /// </summary>
+    private static IQueryable<MetricReading> ApplyReadingsSort(
+        IQueryable<MetricReading> source,
+        ReadingSortField sortBy,
+        SortDirection sortDir)
+        => (sortBy, sortDir) switch
+        {
+            (ReadingSortField.ReceivedAt, SortDirection.Ascending) => source.OrderBy(r => r.ReceivedAtUtc),
+            (ReadingSortField.ReceivedAt, SortDirection.Descending) => source.OrderByDescending(r => r.ReceivedAtUtc),
+            (ReadingSortField.IngestedAt, SortDirection.Ascending) => source.OrderBy(r => r.IngestedAtUtc),
+            (ReadingSortField.IngestedAt, SortDirection.Descending) => source.OrderByDescending(r => r.IngestedAtUtc),
+            (ReadingSortField.Room, SortDirection.Ascending) => source.OrderBy(r => r.Room),
+            (ReadingSortField.Room, SortDirection.Descending) => source.OrderByDescending(r => r.Room),
+            (ReadingSortField.Type, SortDirection.Ascending) => source.OrderBy(r => r.ReadingType),
+            (ReadingSortField.Type, SortDirection.Descending) => source.OrderByDescending(r => r.ReadingType),
+            _ => source.OrderByDescending(r => r.ReceivedAtUtc),
+        };
 
     /// <summary>
     /// Narrows to the one reading type that owns the requested field and flattens it to a value.

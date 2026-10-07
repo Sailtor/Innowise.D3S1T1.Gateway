@@ -96,6 +96,7 @@ public sealed class RoomCollationTests(SqlServerFixture fixture) : IDisposable
         return new MetricReadingQueryService(
             new TestDbContextFactory(options),
             new MetricAggregationQueryValidator(),
+            new ReadingsQueryValidator(),
             cache);
     }
 }

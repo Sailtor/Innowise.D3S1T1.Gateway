@@ -215,6 +215,17 @@ jobs:
           exit 1
         }
 
+    - name: Query the REST API
+      # Same reasoning as the GraphQL check above, for the parallel REST surface: an empty table is
+      # expected, what matters is that the endpoint executes against the real writer schema.
+      run: |
+        response=$(curl -fsS http://localhost:8080/api/rooms/available)
+        echo "$response"
+        [ "$response" = "[]" ] || {
+          echo "Expected an empty array from an empty table, got: $response" >&2
+          exit 1
+        }
+
     - name: Gateway logs
       if: always()
       run: docker logs gateway
