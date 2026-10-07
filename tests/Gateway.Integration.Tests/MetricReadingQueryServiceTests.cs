@@ -234,6 +234,201 @@ public sealed class MetricReadingQueryServiceTests(SqlServerFixture fixture) : I
         Assert.Equal<string>(["kitchen", "office"], rooms);
     }
 
+    [Fact]
+    public async Task ReturnsAllEightSeededReadingsByDefault()
+    {
+        ReadingsPage page = await CreateService()
+            .GetReadingsAsync(new ReadingsQuery { Take = 20 }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(8, page.TotalCount);
+        Assert.Equal(8, page.Items.Count);
+    }
+
+    [Fact]
+    public async Task FiltersReadingsByRoom()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { Room = "office" }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, page.TotalCount);
+        Assert.All(page.Items, reading => Assert.Equal("office", reading.Room));
+    }
+
+    [Fact]
+    public async Task FiltersReadingsByType()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { Type = MetricReadingType.Energy }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.All(page.Items, reading => Assert.IsType<EnergyReading>(reading));
+    }
+
+    [Fact]
+    public async Task FiltersReadingsByReceivedAtRange()
+    {
+        // Inclusive lower / exclusive upper, same convention as the aggregation query's from/to.
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery
+            {
+                ReceivedAtFrom = new DateTime(2026, 8, 18, 11, 0, 0, DateTimeKind.Utc),
+                ReceivedAtTo = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc),
+            },
+            TestContext.Current.CancellationToken);
+
+        // kitchen AirQuality 11:30, kitchen Energy 11:45, office Motion 11:30.
+        Assert.Equal(3, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task FiltersReadingsByIngestedAtRange()
+    {
+        // The seed sets IngestedAtUtc equal to ReceivedAtUtc on every row, so this exercises the
+        // IngestedAt column specifically rather than re-proving the ReceivedAt case above.
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery
+            {
+                IngestedAtFrom = new DateTime(2026, 8, 18, 11, 0, 0, DateTimeKind.Utc),
+                IngestedAtTo = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task CombinesRoomAndTypeFilters()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { Room = "kitchen", Type = MetricReadingType.AirQuality },
+            TestContext.Current.CancellationToken);
+
+        // Kitchen has 5 readings total and 2 Energy readings - only the 3 AirQuality ones should match.
+        Assert.Equal(3, page.TotalCount);
+        Assert.All(page.Items, reading =>
+        {
+            Assert.Equal("kitchen", reading.Room);
+            Assert.IsType<AirQualityReading>(reading);
+        });
+    }
+
+    [Fact]
+    public async Task SortsByReceivedAtAscending()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.ReceivedAt, SortDir = SortDirection.Ascending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 8, 18, 10, 0, 0, DateTimeKind.Utc),
+            page.Items[0].ReceivedAtUtc);
+        Assert.True(page.Items.Zip(page.Items.Skip(1))
+            .All(pair => pair.First.ReceivedAtUtc <= pair.Second.ReceivedAtUtc));
+    }
+
+    [Fact]
+    public async Task SortsByIngestedAtAscending()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.IngestedAt, SortDir = SortDirection.Ascending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 8, 18, 10, 0, 0, DateTimeKind.Utc),
+            page.Items[0].IngestedAtUtc);
+    }
+
+    [Fact]
+    public async Task SortsByIngestedAtDescending()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.IngestedAt, SortDir = SortDirection.Descending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 8, 18, 11, 45, 0, DateTimeKind.Utc),
+            page.Items[0].IngestedAtUtc);
+    }
+
+    [Fact]
+    public async Task SortsByRoomDescendingWithOfficeBeforeKitchen()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.Room, SortDir = SortDirection.Descending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, page.Items.Take(3).Count(reading => reading.Room == "office"));
+        Assert.Equal(5, page.Items.Skip(3).Count(reading => reading.Room == "kitchen"));
+    }
+
+    [Fact]
+    public async Task SortsByTypeAscendingWithAirQualityFirst()
+    {
+        // ReadingType is stored and ordered as its nvarchar column ("AirQuality"/"Energy"/"Motion"
+        // via HasConversion<string>()), not the enum's numeric value - ascending is alphabetical.
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.Type, SortDir = SortDirection.Ascending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, page.Items.Take(4).Count(reading => reading is AirQualityReading));
+    }
+
+    [Fact]
+    public async Task SortsByTypeDescendingWithMotionFirst()
+    {
+        // Alphabetically last of the three discriminator strings, so first in descending order.
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.Type, SortDir = SortDirection.Descending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, page.Items.Take(2).Count(reading => reading is MotionReading));
+    }
+
+    [Fact]
+    public async Task SortsByReceivedAtDescendingByDefault()
+    {
+        ReadingsPage page = await CreateService()
+            .GetReadingsAsync(new ReadingsQuery { Take = 20 }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 8, 18, 11, 45, 0, DateTimeKind.Utc),
+            page.Items[0].ReceivedAtUtc);
+        Assert.True(page.Items.Zip(page.Items.Skip(1))
+            .All(pair => pair.First.ReceivedAtUtc >= pair.Second.ReceivedAtUtc));
+    }
+
+    [Fact]
+    public async Task SortsByRoomAscendingWithKitchenBeforeOffice()
+    {
+        ReadingsPage page = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { SortBy = ReadingSortField.Room, SortDir = SortDirection.Ascending, Take = 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(5, page.Items.Take(5).Count(reading => reading.Room == "kitchen"));
+        Assert.Equal(3, page.Items.Skip(5).Count(reading => reading.Room == "office"));
+    }
+
+    [Fact]
+    public async Task PagesWithoutDisturbingTheTotalCount()
+    {
+        ReadingsPage firstPage = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { Skip = 0, Take = 3 }, TestContext.Current.CancellationToken);
+        ReadingsPage lastPage = await CreateService().GetReadingsAsync(
+            new ReadingsQuery { Skip = 6, Take = 3 }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(8, firstPage.TotalCount);
+        Assert.Equal(3, firstPage.Items.Count);
+        Assert.Equal(8, lastPage.TotalCount);
+        Assert.Equal(2, lastPage.Items.Count);
+    }
+
+    [Fact]
+    public async Task RejectsATakeOutsideTheAllowedRange()
+    {
+        await Assert.ThrowsAsync<ValidationException>(() => CreateService().GetReadingsAsync(
+            new ReadingsQuery { Take = 0 }, TestContext.Current.CancellationToken));
+    }
+
     /// <inheritdoc />
     public void Dispose() => cache.Dispose();
 
@@ -249,6 +444,7 @@ public sealed class MetricReadingQueryServiceTests(SqlServerFixture fixture) : I
         return new MetricReadingQueryService(
             new TestDbContextFactory(options),
             new MetricAggregationQueryValidator(),
+            new ReadingsQueryValidator(),
             cache);
     }
 }

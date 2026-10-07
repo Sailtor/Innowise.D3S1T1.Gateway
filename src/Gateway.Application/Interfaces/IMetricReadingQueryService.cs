@@ -50,4 +50,20 @@ public interface IMetricReadingQueryService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Distinct room names in alphabetical order.</returns>
     Task<IReadOnlyList<string>> GetRoomsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets one page of filtered, sorted raw readings.
+    /// <para>
+    /// This is the one query the REST API needs that GraphQL does not: <c>metricReadings</c> stays a
+    /// raw <see cref="IQueryable{T}"/> resolver so HotChocolate's filter/sort/paging middleware can
+    /// push the whole thing into SQL, which means it never routes through this interface. REST has no
+    /// such middleware, so this method builds and executes the equivalent query by hand.
+    /// </para>
+    /// </summary>
+    /// <param name="query">What to filter by, how to sort, and which page to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page, plus the total count of matching readings.</returns>
+    Task<ReadingsPage> GetReadingsAsync(
+        ReadingsQuery query,
+        CancellationToken cancellationToken = default);
 }

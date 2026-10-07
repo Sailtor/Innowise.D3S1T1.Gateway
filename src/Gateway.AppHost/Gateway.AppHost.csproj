@@ -26,6 +26,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Backs the REST API's Development-only /openapi document, the same way DataIngestor and
+         DataProcessor document their own HTTP surfaces. -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Stable only. The EF Core instrumentation and the Prometheus AspNetCore exporter have
          never shipped a stable release, so traces come from the EF ActivitySource directly and
          metrics leave over OTLP for a collector to expose to Prometheus. -->
